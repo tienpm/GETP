@@ -12,6 +12,10 @@ void _mat_mul_naive(float *A, float *B, float *C, int M, int N, int K, int num_t
 void _mat_mul_tiling_I(float *A, float *B, float *C, int M, int N, int K, int num_threads); 
 void _mat_mul_tiling_IJ(float *A, float *B, float *C, int M, int N, int K, int num_threads);
 void _mat_mul_tiling_IJK(float *A, float *B, float *C, int M, int N, int K, int num_threads); 
+void _mat_mul_tiling_IKJ(float *A, float *B, float *C, int M, int N, int K, int num_threads); 
+void _mat_mul_tiling_JIK(float *A, float *B, float *C, int M, int N, int K, int num_threads); 
+void _mat_mul_tiling_JKI(float *A, float *B, float *C, int M, int N, int K, int num_threads); 
+void _mat_mul_tiling_KJI(float *A, float *B, float *C, int M, int N, int K, int num_threads); 
 void _mat_mul_tiling_KIJ(float *A, float *B, float *C, int M, int N, int K, int num_threads); 
 void _mat_mul_tiling_KIJ_Unrolling(float *A, float *B, float *C, int M, int N, int K, int num_threads); 
 
@@ -31,13 +35,13 @@ void mat_mul(float *_A, float *_B, float *_C, int _M, int _N, int _K,
   // _mat_mul_tiling_IJ(A, B, C, M, N, K, _num_threads);
 
   // Tiling with IJK order
-  _mat_mul_tiling_IJK(A, B, C, M, N, K, _num_threads);
+  // _mat_mul_tiling_IJK(A, B, C, M, N, K, _num_threads);
 
   // Tiling with KIJ order
   // _mat_mul_tiling_KIJ(A, B, C, M, N, K, _num_threads);
 
-  // Tiling with KIJ order + Loop Unrolling
-  // _mat_mul_tiling_KIJ_Unrolling(A, B, C, M, N, K, _num_threads);
+  // Tiling with KIJ order + Loop Unrolling - TODO: increase size 
+  _mat_mul_tiling_KIJ_Unrolling(A, B, C, M, N, K, _num_threads);
  }
 
 void _mat_mul_naive(float *A, float *B, float *C, 
@@ -70,7 +74,7 @@ void _mat_mul_tiling_IJ(float *A, float *B, float *C, int M, int N, int K, int n
   for (int ii = 0; ii < M; ii += ITILESIZE) {
     for (int jj = 0; jj < N; jj += JTILESIZE) {
       for (int i = ii; i < std::min(ii + ITILESIZE, M); i++) {
-        for (int j = 0; j < std::min(jj + JTILESIZE, N); j++) {
+        for (int j = jj; j < std::min(jj + JTILESIZE, N); j++) {
           for (int k = 0; k < K; k++) {
             C[i * N + j] += A[i * K + k] * B[j + K * k];
           }
@@ -81,7 +85,19 @@ void _mat_mul_tiling_IJ(float *A, float *B, float *C, int M, int N, int K, int n
 }
 
 void _mat_mul_tiling_IJK(float *A, float *B, float *C, int M, int N, int K, int num_threads) {
-
+  for (int ii = 0; ii < M; ii += ITILESIZE) {
+    for (int jj = 0; jj < N; jj += JTILESIZE) {
+      for (int kk = 0; kk < K; kk += KTILESIZE) {
+        for (int i = ii; i < std::min(ii + ITILESIZE, M); i++) {
+          for (int j = jj; j < std::min(jj + JTILESIZE, N); j++) {
+            for (int k = kk; k < std::min(kk + KTILESIZE, K); k++) {
+              C[i * N + j] += A[i * K + k] * B[j + K * k];
+            }
+          }
+        }
+      }
+    }
+  }
 } 
 
 void _mat_mul_tiling_KIJ(float *A, float *B, float *C, int M, int N, int K, int num_threads) {
@@ -107,14 +123,16 @@ void _mat_mul_tiling_KIJ_Unrolling(float *A, float *B, float *C, int M, int N, i
   for (int kk = 0; kk < K; kk += KTILESIZE) {
     for (int ii = 0; ii < M; ii += ITILESIZE) {
       for (int jj = 0; jj < N; jj += JTILESIZE) {
-
-        for (int k = kk; k < std::min(K, kk + KTILESIZE); k+=4) {
-          for (int i = ii; i < std::min(M, ii + ITILESIZE); i++) {
+        int mK = std::min(K, kk + KTILESIZE);
+        for (int k = kk; k < mK; k+=4) {
+          int mI = std::min(M, ii + ITILESIZE);
+          for (int i = ii; i < mI; i++) {
             float a0 = A[i * K + (k + 0)];
             float a1 = A[i * K + (k + 1)];
             float a2 = A[i * K + (k + 2)];
             float a3 = A[i * K + (k + 3)];
-            for (int j = jj; j < std::min(N, jj + JTILESIZE); j+=1) {
+            int mJ = std::min(jj + JTILESIZE, N);
+            for (int j = jj; j < mJ; j += 1) {
               float b0 = B[(k + 0) * N + (j + 0)];
               float b1 = B[(k + 1) * N + (j + 0)];
               float b2 = B[(k + 2) * N + (j + 0)];
@@ -122,16 +140,12 @@ void _mat_mul_tiling_KIJ_Unrolling(float *A, float *B, float *C, int M, int N, i
 
               float c0 = C[i * N + (j + 0)];
 
-              c0 += a0 * b0;
-              c0 += a1 * b1;
-              c0 += a2 * b2;
-              c0 += a3 * b3;
+              c0 += a0 * b0 + a1 * b1 + a2 * b2 + a3 * b3;
 
               C[i * N + (j + 0)] = c0;
             }
           }
         }
-
       }
     }
   }
