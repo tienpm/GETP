@@ -1,7 +1,7 @@
 CC=gcc
 CXX=hipcc
 INCLUDES=
-CFLAGS=-O2 -Wall
+CFLAGS=-O2 -Wall --offload-arch=gfx908
 LDFLAGS=-lm -ljpeg
 TARGET=raytracer
 OBJS=raytracer.o
